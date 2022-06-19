@@ -1,34 +1,31 @@
-// SPDX-License-Identifier: AGPL-3
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "../../swaps/DataTypes.sol";
-import "./BaseStrategy.sol";
+import "../../../swaps/DataTypes.sol";
+import "./BaseSinglePoolStrategy.sol";
 
 import "hardhat/console.sol";
 
 /**
- * @notice Single asset strategy V1 - only capable of supplying to a single pool at a time
+ * @notice Single asset strategy - only capable of supplying to a single pool at a time
  */
-contract SingleAssetStrategyV1 is BaseStrategy {
+contract SinglePoolSingleAssetStrategy is BaseSinglePoolStrategy {
     using Address for address;
     using SafeERC20 for IERC20;
 
+    event Join(address indexed src, uint256 amount, uint fee);
+    event Leave(address indexed src, uint256 amount, uint fee);
+    event Supply(address indexed destination, uint amount);
+    event Withdraw(address indexed current, uint amount);
+
     IERC20 public immutable asset;
     uint internal _index = 1e18;
-    address internal _currentPool;
     uint256 internal _depositedInCurrent;
-    address internal _currentAllocator;
 
-    struct PoolConfig {
-        address poolDelegate; // contract to which delegate calls for interacting with the pool.
-        address rewardsDelegate; // contract to which delegate calls for harvesting rewards.
-        bytes harvestCallData; // bytes calldata for rewardsDelegate.
-    }
-    mapping(address => PoolConfig) public poolsConfig;
 
     constructor(
         address asset_,
@@ -39,12 +36,9 @@ contract SingleAssetStrategyV1 is BaseStrategy {
         address[] memory whitelist_,
         PoolConfig[] memory poolConfigs_
     )
-    BaseStrategy(name_, symbol_, feesCollector_, swapper_, whitelist_)
+    BaseSinglePoolStrategy(name_, symbol_, feesCollector_, swapper_, whitelist_, poolConfigs_)
     {
         asset = IERC20(asset_);
-        for (uint i; i < whitelist_.length; ++i) {
-            poolsConfig[whitelist_[i]] = poolConfigs_[i];
-        }
     }
 
     /*** PUBLIC FUNCTIONS ***/
@@ -57,22 +51,7 @@ contract SingleAssetStrategyV1 is BaseStrategy {
         return _index;
     }
 
-    function currentPool() public view returns (address) {
-        return _currentPool;
-    }
 
-    function poolConfig(address pool)
-    public
-    returns (
-        address poolDelegate,
-        address rewardsDelegate,
-        bytes memory harvestCallData
-    )
-     {
-        poolDelegate =  poolsConfig[pool].poolDelegate;
-        rewardsDelegate =  poolsConfig[pool].rewardsDelegate;
-        harvestCallData =  poolsConfig[pool].harvestCallData;
-    }
 
     /**
      * @notice Deposit `amount` into the strategy.
@@ -84,11 +63,12 @@ contract SingleAssetStrategyV1 is BaseStrategy {
         address account = _msgSender();
         asset.safeTransferFrom(account, address(this), amount);
 
-        uint fee = amount / 1000; // 0.1%
+        uint fee = amount >= 1000 ? amount / 1000 : 0; // 0.1% or 0
         asset.safeTransfer(_feesCollector, fee);
 
         uint256 mintAmount = (amount-fee) * granularity() / _index;
         _mint(account, mintAmount);
+        updateCanReallocate(account);
 
         emit Join(account, amount-fee, fee);
 
@@ -112,6 +92,8 @@ contract SingleAssetStrategyV1 is BaseStrategy {
         uint fee = yield >= 20 ? yield / 20 : 0; // 5% or 0
 
         _burn(account, amount);
+        updateCanReallocate(account);
+
 
         asset.safeTransfer(account, grossAmountOut - fee);
         asset.safeTransfer(_feesCollector, fee);
@@ -130,10 +112,13 @@ contract SingleAssetStrategyV1 is BaseStrategy {
      */
     function swapToAssetAndCompound(
         CatalystSwapperDataTypes.SwapData[] calldata swapsData
-    ) public onlyParticipant {
-        uint l = swapsData.length;
+    )
+    public
+    canReallocate
+    {
+        uint max = swapsData.length;
         uint amountFromSwaps;
-        for (uint i; i < l; ++i) {
+        for (uint i; i < max; ++i) {
 
             CatalystSwapperDataTypes.SwapData memory memSwapData = swapsData[i];
             memSwapData.dst = asset;
@@ -144,12 +129,12 @@ contract SingleAssetStrategyV1 is BaseStrategy {
 
             // transfer assets to swapper contract instead of approving & then pulling
             swapsData[i].src.transfer(address(_swapper), swapsData[i].amountIn);
-            (bool ok, uint amountOut, ) = _swapper.swap(memSwapData);
+            (,uint amountOut, ) = _swapper.swap(memSwapData);
             amountFromSwaps += amountOut;
         }
 
         // Incentivise compounding, the more you do so the more you earn
-        uint harvestReward = amountFromSwaps / 200; // 0.5%
+        uint harvestReward = amountFromSwaps >= 200 ? amountFromSwaps / 200 : 0; // 0.5% or 0
         asset.transfer(_msgSender(), harvestReward);
 
         _supplyToPool(_currentPool, amountFromSwaps - harvestReward, false);
@@ -161,7 +146,7 @@ contract SingleAssetStrategyV1 is BaseStrategy {
      * @dev Only accounts that have a stake can decide where to allocate the funds
      * @param destination - the pool to which supply funds
      */
-    function reallocate(address destination) public onlyParticipant {
+    function reallocate(address destination) public canReallocate {
         require(isWhitelisted[destination], "SingleAssetStrategy: Forbidden address");
 
         uint amountToDeposit = asset.balanceOf(address(this));
@@ -175,7 +160,7 @@ contract SingleAssetStrategyV1 is BaseStrategy {
 
             // Incentivise allocator to deposit in pool w/ best yield
             uint rewardToAllocator = yield >= 400 ? yield / 400 : 0; // 0.25% or 0
-            asset.transfer(_currentAllocator, rewardToAllocator);
+            asset.safeTransfer(_currentAllocator, rewardToAllocator);
 
             uint increase = yield - rewardToAllocator;
             _updateIndex(increase);
@@ -196,6 +181,12 @@ contract SingleAssetStrategyV1 is BaseStrategy {
     }
 
     /*** INTERNAL FUNCTIONS ***/
+
+    function updateCanReallocate(address account) internal {
+        // must have more than 1% of the pool
+        _canReallocate[account] = balanceOf(account) >= (totalSupply() / 100);
+    }
+
     /**
      * @notice Supply `amount` of funds to `destination`.
      * @dev

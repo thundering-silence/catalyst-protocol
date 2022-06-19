@@ -1,12 +1,8 @@
 const { expect } = require("chai");
-const { constants, BigNumber, getDefaultProvider } = require("ethers");
-const { parseEther } = require("ethers/lib/utils");
+const { constants, BigNumber } = require("ethers");
 const { ethers } = require("hardhat");
-const { isCallTrace } = require("hardhat/internal/hardhat-network/stack-traces/message-trace");
 
 require('dotenv').config()
-
-const Provider = getDefaultProvider(process.env.HARDHAT_URL, '0bd316f234e14ba5a28d1dd10f415067')
 
 const abiERC20 = [
     "function balanceOf(address owner) view returns (uint)",
@@ -46,7 +42,7 @@ const delegates = [
     "Catalyst_AaveV3Rewards_Delegate",
 ]
 
-describe("SingleAssetStrategyV1", function () {
+describe("SinglePoolSingleAssetStrategy", function () {
     before(async () => {
         this.signers = await ethers.getSigners()
         this.account0 = await this.signers[0].getAddress();
@@ -90,11 +86,11 @@ describe("SingleAssetStrategyV1", function () {
     })
 
     it("should be deployable", async () => {
-        this.Sas = await ethers.getContractFactory("SingleAssetStrategyV1");
+        this.Sas = await ethers.getContractFactory("SinglePoolSingleAssetStrategy");
         this.sas = await this.Sas.deploy(
             WAVAX,
-            'WAVAX SingleAssetStrategyV1',
-            'myWAVAX-V1',
+            'WAVAX SinglePoolSingleAssetStrategy',
+            'myWAVAX SPSA',
             this.collector.address,
             constants.AddressZero,
             [

@@ -1,4 +1,4 @@
-// SPDX-LIcense-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -6,36 +6,45 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import "../../swaps/ICatalystSwapper.sol";
-import "../../swaps/DataTypes.sol";
+import "../../../swaps/ICatalystSwapper.sol";
+import "../../../swaps/DataTypes.sol";
 
 import "hardhat/console.sol";
 
 
-abstract contract BaseStrategy is ERC20, Ownable {
+abstract contract BaseSinglePoolStrategy is ERC20, Ownable {
     using SafeERC20 for IERC20;
 
+    event Open();
+    event Close();
+    event Harvest(address[] rewards, uint256[] amounts);
+    event FeesCollectorChanged(address indexed collector);
+    event SwapperChanged(address indexed swapper);
+
+    address[] public pools;
     mapping(address => bool) public isWhitelisted;
     bool internal _closed; // is joining closed
     address internal _feesCollector;
     ICatalystSwapper internal _swapper;
 
-    event Join(address indexed src, uint256 amount, uint fee);
-    event Leave(address indexed src, uint256 amount, uint fee);
-    event Open();
-    event Close();
-    event Supply(address indexed destination, uint amount);
-    event Withdraw(address indexed current, uint amount);
-    event Harvest(address[] rewards, uint256[] amounts);
-    event FeesCollectorChanged(address indexed collector);
-    event SwapperChanged(address indexed swapper);
+    mapping(address => bool) internal _canReallocate;
+    address internal _currentPool;
+    address internal _currentAllocator;
+
+    struct PoolConfig {
+        address poolDelegate; // contract to which delegate calls for interacting with the pool.
+        address rewardsDelegate; // contract to which delegate calls for harvesting rewards.
+        bytes harvestCallData; // bytes calldata for rewardsDelegate.
+    }
+    mapping(address => PoolConfig) public poolsConfig;
 
     constructor(
         string memory name_,
         string memory symbol_,
         address feesCollector_,
         address swapper_,
-        address[] memory whitelist_
+        address[] memory whitelist_,
+        PoolConfig[] memory poolConfigs_
     )
     ERC20(name_, symbol_)
     {
@@ -44,9 +53,11 @@ abstract contract BaseStrategy is ERC20, Ownable {
 
         _closed = false;
 
+        pools = whitelist_;
         uint l = whitelist_.length;
         for (uint i; i < l; ++i) {
             isWhitelisted[whitelist_[i]] = true;
+            poolsConfig[whitelist_[i]] = poolConfigs_[i];
         }
     }
 
@@ -55,8 +66,11 @@ abstract contract BaseStrategy is ERC20, Ownable {
         _;
     }
 
-    modifier onlyParticipant() {
-        require(balanceOf(_msgSender()) > 0, "BaseStrategy: Not a participant");
+    modifier canReallocate() {
+        require(
+            owner() == _msgSender() || _canReallocate[_msgSender()],
+            "BaseStrategy: Not Allowed"
+        );
         _;
     }
 
@@ -66,6 +80,24 @@ abstract contract BaseStrategy is ERC20, Ownable {
 
     function swapper() public view returns (address) {
         return address(_swapper);
+    }
+
+        function currentPool() public view returns (address) {
+        return _currentPool;
+    }
+
+    function poolConfig(address pool)
+    public
+    view
+    returns (
+        address poolDelegate,
+        address rewardsDelegate,
+        bytes memory harvestCallData
+    )
+     {
+        poolDelegate =  poolsConfig[pool].poolDelegate;
+        rewardsDelegate =  poolsConfig[pool].rewardsDelegate;
+        harvestCallData =  poolsConfig[pool].harvestCallData;
     }
 
     /**
