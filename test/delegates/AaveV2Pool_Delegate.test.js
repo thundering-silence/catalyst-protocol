@@ -9,29 +9,29 @@ require('dotenv').config()
 const Provider = getDefaultProvider(process.env.HARDHAT_URL, '0bd316f234e14ba5a28d1dd10f415067')
 
 const abiERC20 = [
-    "function balanceOf(address owner) view returns (uint)",
-    "function approve(address spender, uint amount) public",
-    "function allowance(address owner, address spender) public view returns (uint)",
-    "function transfer(address dst, uint wad) public returns (bool)",
-    "function transferFrom(address src, address dst, uint wad) public returns (bool)",
+    "function balanceOf(address owner) returns (uint)",
+    "function approve(address spender, uint amount)",
+    "function allowance(address owner, address spender) returns (uint)",
+    "function transfer(address dst, uint wad) returns (bool)",
+    "function transferFrom(address src, address dst, uint wad) returns (bool)",
 ]
 
 const ERC20 = new ethers.utils.Interface(abiERC20)
 
 const abiWrappedNative = [
-    "function deposit() public;",
-    "function withdraw() public",
+    "function deposit()",
+    "function withdraw()",
     ...abiERC20,
 ]
 const WRAPPED_NATIVE = new ethers.utils.Interface(abiWrappedNative)
 
-const AAVE_V2 = {
-    controller: '0x76cc67FF2CC77821A70ED14321111Ce381C2594D',
-    incentives: '0x58Cd851c28dF05Edc7F018B533C0257DE57673f7'
-}
+const WAVAX = '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7'
 
-const WAVAX = '0xd00ae08403b9bbb9124bb305c09058e32c39a48c'
-// const aWAVAX = '0xA79570641bC9cbc6522aA80E2de03bF9F7fd123a'
+const AAVE_V2 = {
+    controller: '0x4F01AeD16D97E3aB5ab2B501154DC9bb0F1A5A2C',
+    incentives: '0x01D83Fe6A10D2f2B7AF17034343746188272cAc9',
+    aWAVAX: '0xDFE521292EcE2A4f44242efBcD66Bc594CA9714B',
+}
 
 describe("AaveV2Delegate:", function () {
     before(async () => {

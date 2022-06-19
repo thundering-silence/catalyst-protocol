@@ -18,6 +18,13 @@ const abiERC20 = [
 
 const ERC20 = new ethers.utils.Interface(abiERC20)
 
+const abiWrappedNative = [
+    "function deposit();",
+    "function withdraw()",
+    ...abiERC20,
+]
+const WRAPPED_NATIVE = new ethers.utils.Interface(abiWrappedNative)
+
 const AAVE_V3 = {
     controller: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
     incentives: '0x929EC64c34a17401F460460D4B9390518E5B473e'
@@ -39,17 +46,24 @@ describe("AaveV3Delegate:", function () {
         this.reactor = await this.Reactor.deploy();
         await this.reactor.deployed();
 
-        this.USDC = new ethers.Contract(
-            USDC, ERC20, this.signers[0]
+        this.DEPOSIT_AMOUNT = constants.WeiPerEther;
+
+        this.WAVAX = new ethers.Contract(
+            WAVAX, WRAPPED_NATIVE, this.signers[0]
         )
-        this.DEPOSIT_AMOUNT = BigNumber.from('1000000');
-        // transfer USDC to REACTOR
-        await this.USDC.transfer(
+        // wrap AVAX
+        const wrapAVAX = {
+            from: this.account0,
+            to: WAVAX,
+            value: this.DEPOSIT_AMOUNT
+        }
+        await this.signers[0].sendTransaction(wrapAVAX);
+
+        // transfer WAVAX to reactor
+        await this.WAVAX.transfer(
             this.reactor.address,
             this.DEPOSIT_AMOUNT
         )
-
-        this.aUSDC = new ethers.Contract(aUSDC, abiERC20, Provider);
 
     })
 
@@ -58,7 +72,7 @@ describe("AaveV3Delegate:", function () {
             this.contract.address,
             this.contract.interface.encodeFunctionData("enter", [
                 AAVE_V3.controller,
-                USDC,
+                WAVAX,
                 this.DEPOSIT_AMOUNT
             ]),
             constants.Zero,
@@ -81,8 +95,8 @@ describe("AaveV3Delegate:", function () {
             }
         )
 
-        const USDCBalance = await this.USDC.functions.balanceOf(this.reactor.address)
-        expect(USDCBalance[0].eq(BigNumber.from(0))).to.be.true;
+        const balance = await this.WAVAX.functions.balanceOf(this.reactor.address)
+        expect(balance[0].eq(BigNumber.from(0))).to.be.true;
     })
 
 
@@ -91,7 +105,7 @@ describe("AaveV3Delegate:", function () {
             this.contract.address,
             this.contract.interface.encodeFunctionData("exit", [
                 AAVE_V3.controller,
-                USDC,
+                WAVAX,
                 constants.MaxUint256
             ]),
             constants.Zero,
@@ -114,7 +128,7 @@ describe("AaveV3Delegate:", function () {
             }
         )
 
-        const USDCBalance = await this.USDC.functions.balanceOf(this.reactor.address)
-        expect(USDCBalance[0].gte(this.DEPOSIT_AMOUNT)).to.be.true;
+        const balance = await this.WAVAX.functions.balanceOf(this.reactor.address)
+        expect(balance[0].gte(this.DEPOSIT_AMOUNT)).to.be.true;
     })
 })

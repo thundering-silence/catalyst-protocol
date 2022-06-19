@@ -54,11 +54,12 @@ describe("AaveV3Rewards:", function () {
         )
     })
 
-    it("Should have a `harvestRewards` method that pulls rewards", async () => {
-        this.rewardsDelegate.functions.harvestRewards(
-            AAVE_V3.incentives,
-            USDC
-        )
-    })
+    // TODO
+    // it("Should have a `harvestRewards` method that pulls rewards", async () => {
+    //     this.rewardsDelegate.functions.harvestRewards(
+    //         AAVE_V3.incentives,
+    //         USDC
+    //     )
+    // })
 
 })

@@ -13,7 +13,7 @@ const abiERC20 = [
 ]
 
 const abiWrappedNative = [
-    "function deposit();",
+    "function deposit()",
     "function withdraw()",
     ...abiERC20,
 ]
