@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "../../interfaces/third-party/Compound/IComptroller.sol";
-import "../../interfaces/INative.sol";
+import "../../interfaces/third-party/INative.sol";
 
 /**
  * @notice Helper contract to interact with BenQi  for rewards.
